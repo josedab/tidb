@@ -75,6 +75,7 @@ import (
 	"github.com/pingcap/tidb/pkg/parser/ast"
 	"github.com/pingcap/tidb/pkg/parser/mysql"
 	"github.com/pingcap/tidb/pkg/parser/terror"
+	"github.com/pingcap/tidb/pkg/plancache"
 	metrics2 "github.com/pingcap/tidb/pkg/planner/core/metrics"
 	"github.com/pingcap/tidb/pkg/privilege/privileges"
 	"github.com/pingcap/tidb/pkg/resourcegroup/runaway"
@@ -836,6 +837,18 @@ func (do *Domain) Start(startMode ddl.StartMode) error {
 		}
 	}
 
+	// Warmup plan cache (async to not block startup)
+	if cfg := gCfg.PlanCacheWarmup; cfg.Enabled {
+		do.wg.Add(1)
+		go func() {
+			defer do.wg.Done()
+			err := do.warmupPlanCache(context.Background(), cfg)
+			if err != nil {
+				logutil.BgLogger().Error("Plan cache warmup failed", zap.Error(err))
+			}
+		}()
+	}
+
 	return nil
 }
 
@@ -848,6 +861,11 @@ func (do *Domain) loadSysKSInfoSchema() error {
 	logutil.BgLogger().Info("loading system keyspace info schema")
 	_, err := do.GetKSStore(keyspace.System)
 	return err
+}
+
+// warmupPlanCache warms up the plan cache by compiling frequently executed queries
+func (do *Domain) warmupPlanCache(ctx context.Context, cfg config.PlanCacheWarmupConfig) error {
+	return plancache.WarmupPlanCache(ctx, do, cfg)
 }
 
 // GetKSStore returns the kv.Storage for the given keyspace.

@@ -52,6 +52,8 @@ var (
 	PlanCacheInstanceMemoryUsage    *prometheus.GaugeVec
 	PlanCacheInstancePlanNumCounter *prometheus.GaugeVec
 	PlanCacheProcessDuration        *prometheus.HistogramVec
+	PlanCacheWarmupDuration         prometheus.Histogram
+	PlanCacheWarmupCount            *prometheus.CounterVec
 	ReadFromTableCacheCounter       prometheus.Counter
 	HandShakeErrorCounter           prometheus.Counter
 	GetTokenDurationHistogram       prometheus.Histogram
@@ -222,6 +224,23 @@ func InitServerMetrics() {
 			Help:      "Bucketed histogram of processing time (s) of plan cache operations.",
 			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 28), // 1ms ~ 1.5days
 		}, []string{LblType})
+
+	PlanCacheWarmupDuration = metricscommon.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "tidb",
+			Subsystem: "server",
+			Name:      "plan_cache_warmup_duration_seconds",
+			Help:      "Duration of plan cache warmup process.",
+			Buckets:   prometheus.ExponentialBuckets(0.5, 2, 10), // 0.5s ~ 256s
+		})
+
+	PlanCacheWarmupCount = metricscommon.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "tidb",
+			Subsystem: "server",
+			Name:      "plan_cache_warmup_queries_total",
+			Help:      "Total number of queries processed during warmup.",
+		}, []string{"status"})
 
 	ReadFromTableCacheCounter = metricscommon.NewCounter(
 		prometheus.CounterOpts{

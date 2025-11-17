@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "plancache",
+    srcs = [
+        "warmup.go",
+    ],
+    importpath = "github.com/pingcap/tidb/pkg/plancache",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/config",
+        "//pkg/kv",
+        "//pkg/metrics",
+        "//pkg/sessionctx",
+        "//pkg/util",
+        "//pkg/util/chunk",
+        "//pkg/util/logutil",
+        "@com_github_pingcap_errors//:errors",
+        "@org_uber_go_zap//:zap",
+    ],
+)

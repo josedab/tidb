@@ -207,6 +207,7 @@ type Config struct {
 	Status                     Status                  `toml:"status" json:"status"`
 	Performance                Performance             `toml:"performance" json:"performance"`
 	PreparedPlanCache          PreparedPlanCache       `toml:"prepared-plan-cache" json:"prepared-plan-cache"`
+	PlanCacheWarmup            PlanCacheWarmupConfig   `toml:"plan-cache-warmup" json:"plan-cache-warmup"`
 	OpenTracing                OpenTracing             `toml:"opentracing" json:"opentracing"`
 	ProxyProtocol              ProxyProtocol           `toml:"proxy-protocol" json:"proxy-protocol"`
 	PDClient                   tikvcfg.PDClient        `toml:"pd-client" json:"pd-client"`
@@ -813,6 +814,20 @@ type PreparedPlanCache struct {
 	MemoryGuardRatio float64 `toml:"memory-guard-ratio" json:"memory-guard-ratio"`
 }
 
+// PlanCacheWarmupConfig is the plan cache warmup section of the config.
+type PlanCacheWarmupConfig struct {
+	// Enabled enables plan cache warmup on startup
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// Source indicates warmup source: "slow-log", "statement-summary"
+	Source string `toml:"source" json:"source"`
+	// TopN is the number of queries to warm up
+	TopN int `toml:"top-n" json:"top-n"`
+	// Timeout is the maximum warmup duration in seconds
+	Timeout int `toml:"timeout" json:"timeout"`
+	// MinExecutions is the minimum execution count to consider (filters out one-off queries)
+	MinExecutions int `toml:"min-executions" json:"min-executions"`
+}
+
 // OpenTracing is the opentracing section of the config.
 type OpenTracing struct {
 	Enable     bool                `toml:"enable" json:"enable"`
@@ -1086,6 +1101,13 @@ var defaultConf = Config{
 		Enabled:          true,
 		Capacity:         100,
 		MemoryGuardRatio: 0.1,
+	},
+	PlanCacheWarmup: PlanCacheWarmupConfig{
+		Enabled:       false, // Opt-in for initial rollout
+		Source:        "statement-summary",
+		TopN:          100,
+		Timeout:       30,
+		MinExecutions: 10,
 	},
 	OpenTracing: OpenTracing{
 		Enable: false,
