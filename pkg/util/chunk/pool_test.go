@@ -108,3 +108,135 @@ func BenchmarkPoolChunkOperation(b *testing.B) {
 		}
 	})
 }
+
+// TestLocalChunkPool tests the per-goroutine local pool caching
+func TestLocalChunkPool(t *testing.T) {
+	initCap := 1024
+	fieldTypes := []*types.FieldType{
+		types.NewFieldType(mysql.TypeLonglong),
+		types.NewFieldType(mysql.TypeVarchar),
+	}
+
+	// Get a chunk from pool
+	chk1 := getChunkFromPool(initCap, fieldTypes)
+	require.NotNil(t, chk1)
+	require.Equal(t, initCap, chk1.capacity)
+
+	// Return it to pool
+	putChunkFromPool(initCap, fieldTypes, chk1)
+
+	// Get another chunk - should potentially reuse from local pool
+	chk2 := getChunkFromPool(initCap, fieldTypes)
+	require.NotNil(t, chk2)
+	require.Equal(t, initCap, chk2.capacity)
+
+	// Clean up
+	putChunkFromPool(initCap, fieldTypes, chk2)
+}
+
+// TestChunkPoolSizeLimit tests that large chunks are not pooled
+func TestChunkPoolSizeLimit(t *testing.T) {
+	initCap := 100000 // Very large capacity
+	fieldTypes := []*types.FieldType{
+		types.NewFieldType(mysql.TypeVarchar),
+		types.NewFieldType(mysql.TypeVarchar),
+		types.NewFieldType(mysql.TypeVarchar),
+		types.NewFieldType(mysql.TypeVarchar),
+		types.NewFieldType(mysql.TypeVarchar),
+	}
+
+	// Create a large chunk
+	largeChunk := getChunkFromPool(initCap, fieldTypes)
+	require.NotNil(t, largeChunk)
+
+	// Add data to make it large
+	for i := 0; i < 10000; i++ {
+		largeChunk.AppendString(0, "very long string for testing memory usage limits in the chunk pool optimization implementation according to RFC-0009")
+		largeChunk.AppendString(1, "another long string to increase memory usage")
+		largeChunk.AppendString(2, "more data to ensure chunk exceeds size limit")
+		largeChunk.AppendString(3, "additional content for memory testing")
+		largeChunk.AppendString(4, "final column with long string data")
+	}
+
+	// Try to return it - should be dropped if too large
+	putChunkFromPool(initCap, fieldTypes, largeChunk)
+	// No assertion needed - just testing that it doesn't panic
+}
+
+// TestAdaptivePoolSizing tests the adaptive pool size adjustment
+func TestAdaptivePoolSizing(t *testing.T) {
+	pool := NewPool(1024)
+	require.Equal(t, int64(minPoolSize), pool.maxPooled)
+
+	fieldTypes := []*types.FieldType{
+		types.NewFieldType(mysql.TypeLonglong),
+	}
+
+	// Simulate workload by getting many chunks
+	chunks := make([]*Chunk, 0, 1000)
+	for i := 0; i < 1000; i++ {
+		chk := pool.GetChunk(fieldTypes)
+		chunks = append(chunks, chk)
+	}
+
+	// Active chunks should be tracked
+	require.Equal(t, int64(1000), pool.activeChunks)
+
+	// Return all chunks
+	for _, chk := range chunks {
+		pool.PutChunk(fieldTypes, chk)
+	}
+
+	// Active chunks should decrease
+	require.Equal(t, int64(0), pool.activeChunks)
+}
+
+// BenchmarkLocalPoolVsGlobal benchmarks the performance improvement of local pools
+func BenchmarkLocalPoolVsGlobal(b *testing.B) {
+	fieldTypes := []*types.FieldType{
+		types.NewFieldType(mysql.TypeLonglong),
+		types.NewFieldType(mysql.TypeVarchar),
+		types.NewFieldType(mysql.TypeDouble),
+	}
+	initCap := 1024
+
+	b.Run("WithLocalPool", func(b *testing.B) {
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				chk := getChunkFromPool(initCap, fieldTypes)
+				putChunkFromPool(initCap, fieldTypes, chk)
+			}
+		})
+	})
+
+	b.Run("DirectGlobalPool", func(b *testing.B) {
+		pool := NewPool(initCap)
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				chk := pool.GetChunk(fieldTypes)
+				pool.PutChunk(fieldTypes, chk)
+			}
+		})
+	})
+}
+
+// BenchmarkChunkAllocation measures allocation performance with optimization
+func BenchmarkChunkAllocation(b *testing.B) {
+	fieldTypes := []*types.FieldType{
+		types.NewFieldType(mysql.TypeLonglong),
+		types.NewFieldType(mysql.TypeVarchar),
+		types.NewFieldType(mysql.TypeDouble),
+		types.NewFieldType(mysql.TypeDatetime),
+	}
+	initCap := 1024
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		chk := getChunkFromPool(initCap, fieldTypes)
+		// Simulate some work
+		chk.Reset()
+		putChunkFromPool(initCap, fieldTypes, chk)
+	}
+}

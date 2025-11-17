@@ -102,6 +102,7 @@ func InitMetrics() {
 	InitInfoSchemaV2Metrics()
 	InitMemoryMetrics()
 	timermetrics.InitTimerMetrics()
+	InitChunkMetrics()
 
 	InitBRMetrics()
 
