@@ -1085,12 +1085,15 @@ var MySQLErrName = map[uint16]*mysql.ErrMessage{
 
 	ErrHTTPServiceError: mysql.Message("HTTP request failed with status %s", nil),
 
-	ErrWarnOptimizerHintInvalidInteger:  mysql.Message("integer value is out of range in '%s'", nil),
-	ErrWarnOptimizerHintUnsupportedHint: mysql.Message("Optimizer hint %s is not supported by TiDB and is ignored", nil),
-	ErrWarnOptimizerHintInvalidToken:    mysql.Message("Cannot use %s '%s' (tok = %d) in an optimizer hint", nil),
-	ErrWarnMemoryQuotaOverflow:          mysql.Message("Max value of MEMORY_QUOTA is %d bytes, ignore this invalid limit", nil),
-	ErrWarnOptimizerHintParseError:      mysql.Message("Optimizer hint syntax error at %v", nil),
-	ErrWarnOptimizerHintWrongPos:        mysql.Message("Optimizer hint can only be followed by certain keywords like SELECT, INSERT, etc.", nil),
+	ErrWarnOptimizerHintInvalidInteger:     mysql.Message("integer value is out of range in '%s'", nil),
+	ErrWarnOptimizerHintUnsupportedHint:    mysql.Message("Optimizer hint %s is not supported by TiDB and is ignored", nil),
+	ErrWarnOptimizerHintInvalidToken:       mysql.Message("Cannot use %s '%s' (tok = %d) in an optimizer hint", nil),
+	ErrWarnMemoryQuotaOverflow:             mysql.Message("Max value of MEMORY_QUOTA is %d bytes, ignore this invalid limit", nil),
+	ErrWarnOptimizerHintParseError:         mysql.Message("Optimizer hint syntax error at %v", nil),
+	ErrWarnOptimizerHintWrongPos:           mysql.Message("Optimizer hint can only be followed by certain keywords like SELECT, INSERT, etc.", nil),
+	ErrWarnOptimizerHintInvalidArguments:   mysql.Message("Hint '%s' %s", nil),
+	ErrWarnOptimizerHintUnknownTable:       mysql.Message("Hint '%s' references unknown table '%s'", nil),
+	ErrWarnOptimizerHintNotApplied:         mysql.Message("Hint '%s' was not applied: %s", nil),
 
 	ErrSequenceUnsupportedTableOption:      mysql.Message("Unsupported sequence table-option %s", nil),
 	ErrColumnTypeUnsupportedNextValue:      mysql.Message("Unsupported sequence default value for column type '%s'", nil),

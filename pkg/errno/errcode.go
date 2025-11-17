@@ -1013,6 +1013,9 @@ const (
 	ErrWarnOptimizerHintWrongPos           = 8066
 	ErrUnsupportedSecondArgumentType       = 8067
 	ErrColumnNotMatched                    = 8068
+	ErrWarnOptimizerHintInvalidArguments   = 8069
+	ErrWarnOptimizerHintUnknownTable       = 8070
+	ErrWarnOptimizerHintNotApplied         = 8071
 	ErrInvalidPluginID                     = 8101
 	ErrInvalidPluginManifest               = 8102
 	ErrInvalidPluginName                   = 8103

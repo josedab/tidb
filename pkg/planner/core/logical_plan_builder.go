@@ -3718,6 +3718,41 @@ func (b *PlanBuilder) TableHints() *h.PlanHints {
 	return b.tableHintInfo[len(b.tableHintInfo)-1]
 }
 
+// extractTableNamesFromPlan extracts all table names/aliases from a logical plan
+func extractTableNamesFromPlan(p base.LogicalPlan) []string {
+	if p == nil {
+		return nil
+	}
+
+	var names []string
+	switch x := p.(type) {
+	case *logicalop.DataSource:
+		// Add table name
+		if x.TableAsName != nil && x.TableAsName.L != "" {
+			names = append(names, x.TableAsName.L)
+		} else {
+			names = append(names, x.TableInfo().Name.L)
+		}
+	case *logicalop.LogicalJoin:
+		// Recursively collect from both sides of join
+		names = append(names, extractTableNamesFromPlan(x.Children()[0])...)
+		names = append(names, extractTableNamesFromPlan(x.Children()[1])...)
+	case *logicalop.LogicalApply:
+		// Collect from both sides
+		names = append(names, extractTableNamesFromPlan(x.Children()[0])...)
+		if len(x.Children()) > 1 {
+			names = append(names, extractTableNamesFromPlan(x.Children()[1])...)
+		}
+	default:
+		// For other operators, recursively check children
+		for _, child := range p.Children() {
+			names = append(names, extractTableNamesFromPlan(child)...)
+		}
+	}
+
+	return names
+}
+
 func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p base.LogicalPlan, err error) {
 	b.pushSelectOffset(sel.QueryBlockOffset)
 	b.pushTableHints(sel.TableHints, sel.QueryBlockOffset)
@@ -3796,6 +3831,14 @@ func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p b
 	p, err = b.buildTableRefs(ctx, sel.From)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate query hints if present
+	var hintValidator *HintValidator
+	if len(sel.TableHints) > 0 {
+		hintValidator = NewHintValidator(b.ctx.GetSCtx())
+		availableTables := extractTableNamesFromPlan(p)
+		hintValidator.ValidateHints(sel.TableHints, availableTables)
 	}
 
 	originalFields := sel.Fields.Fields
@@ -4050,7 +4093,18 @@ func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p b
 		}
 		proj.SetOutputNames(p.OutputNames()[:oldLen])
 		proj.SetSchema(schema)
+
+		// Warn about unapplied hints
+		if hintValidator != nil {
+			hintValidator.WarnUnappliedHints(sel.TableHints)
+		}
+
 		return b.tryToBuildSequence(currentLayerCTEs, proj), nil
+	}
+
+	// Warn about unapplied hints
+	if hintValidator != nil {
+		hintValidator.WarnUnappliedHints(sel.TableHints)
 	}
 
 	return b.tryToBuildSequence(currentLayerCTEs, p), nil
