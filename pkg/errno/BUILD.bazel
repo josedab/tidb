@@ -6,6 +6,7 @@ go_library(
         "errcode.go",
         "errname.go",
         "infoschema.go",
+        "structured_error.go",
     ],
     importpath = "github.com/pingcap/tidb/pkg/errno",
     visibility = ["//visibility:public"],
@@ -17,8 +18,10 @@ go_test(
     timeout = "short",
     srcs = [
         "errname_test.go",
+        "example_usage_test.go",
         "infoschema_test.go",
         "main_test.go",
+        "structured_error_test.go",
     ],
     embed = [":errno"],
     embedsrcs = ["errcode.go"],
@@ -27,5 +30,6 @@ go_test(
     deps = [
         "//pkg/testkit/testsetup",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
