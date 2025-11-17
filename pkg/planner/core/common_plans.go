@@ -1054,6 +1054,13 @@ func prepareOperatorInfo(flatOp *FlatOperator, format string, analyze bool,
 		}
 		row = append(row, taskType, accessObject, operatorInfo)
 	}
+
+	// Add index selection info for FORMAT='detailed'
+	if format == types.ExplainFormatDetailed {
+		indexSelectionInfo := getIndexSelectionInfo(p)
+		row = append(row, indexSelectionInfo)
+	}
+
 	return append(rows, row)
 }
 
@@ -1114,6 +1121,55 @@ func getOperatorInfo(p base.Plan, format string) (estRows, estCost, costFormula,
 		operatorInfo = p.ExplainInfo()
 	}
 	return estRows, estCost, costFormula, accessObject, operatorInfo
+}
+
+// getIndexSelectionInfo formats the index selection information for EXPLAIN FORMAT='detailed'
+func getIndexSelectionInfo(p base.Plan) string {
+	// Extract IndexSelectionInfo from physical plans
+	var indexSelectionInfo *util.IndexSelectionInfo
+
+	switch pp := p.(type) {
+	case *physicalop.PhysicalTableScan:
+		indexSelectionInfo = pp.IndexSelectionInfo
+	case *physicalop.PhysicalIndexScan:
+		indexSelectionInfo = pp.IndexSelectionInfo
+	default:
+		// Other plan types don't have index selection info
+		return ""
+	}
+
+	if indexSelectionInfo == nil || len(indexSelectionInfo.Candidates) == 0 {
+		return ""
+	}
+
+	// Format the index selection info as a multi-line string
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("chosen: %s\n", indexSelectionInfo.Chosen.IndexName))
+	result.WriteString(fmt.Sprintf("reason: %s\n\n", indexSelectionInfo.Reason))
+	result.WriteString("candidates_considered:\n")
+
+	for _, candidate := range indexSelectionInfo.Candidates {
+		status := "✗"
+		if candidate.Chosen {
+			status = "✓"
+		}
+		result.WriteString(fmt.Sprintf("  - %s: %s\n", candidate.IndexName, status))
+		result.WriteString(fmt.Sprintf("      cost: %.1f\n", candidate.Cost))
+		result.WriteString(fmt.Sprintf("      rows: %d\n", candidate.EstimatedRows))
+		result.WriteString(fmt.Sprintf("      selectivity: %.3f\n", candidate.Selectivity))
+		if candidate.RejectedReason != "" {
+			result.WriteString(fmt.Sprintf("      rejected: %s\n", candidate.RejectedReason))
+		}
+		result.WriteString("\n")
+	}
+
+	if indexSelectionInfo.StatsInfo != nil {
+		result.WriteString(fmt.Sprintf("statistics_version: %s\n",
+			indexSelectionInfo.StatsInfo.LastUpdated.Format("2006-01-02")))
+		result.WriteString(fmt.Sprintf("stats_healthy: %d%%\n", indexSelectionInfo.StatsInfo.Healthy))
+	}
+
+	return result.String()
 }
 
 // BinaryPlanStrFromFlatPlan generates the compressed and encoded binary plan from a FlatPhysicalPlan.

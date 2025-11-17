@@ -123,6 +123,10 @@ type DataSource struct {
 
 	// AskedColumnGroup is upper asked column groups for maintained of group ndv from composite index.
 	AskedColumnGroup [][]*expression.Column
+
+	// IndexSelectionInfo captures the index selection decision for EXPLAIN output.
+	// This is populated during findBestTask and used by EXPLAIN FORMAT='detailed'.
+	IndexSelectionInfo *util.IndexSelectionInfo
 }
 
 // Init initializes DataSource.

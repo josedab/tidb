@@ -1753,6 +1753,15 @@ func findBestTask4LogicalDataSource(super base.LogicalPlan, prop *property.Physi
 	t = base.InvalidTask
 	candidates := skylinePruning(ds, prop)
 	pruningInfo := getPruningInfo(ds, candidates, prop)
+
+	// Track candidate tasks and costs for EXPLAIN FORMAT='detailed'
+	type candidateTaskInfo struct {
+		path *util.AccessPath
+		task base.Task
+		cost float64
+	}
+	candidateTaskInfos := make([]candidateTaskInfo, 0, len(candidates))
+
 	defer func() {
 		if err == nil && t != nil && !t.Invalid() && pruningInfo != "" {
 			warnErr := errors.NewNoStackError(pruningInfo)
@@ -1761,6 +1770,86 @@ func findBestTask4LogicalDataSource(super base.LogicalPlan, prop *property.Physi
 			} else {
 				ds.SCtx().GetSessionVars().StmtCtx.AppendExtraNote(warnErr)
 			}
+		}
+
+		// Capture index selection info for EXPLAIN
+		if err == nil && t != nil && !t.Invalid() && len(candidateTaskInfos) > 0 {
+			selectionInfo := &util.IndexSelectionInfo{
+				Candidates: make([]util.IndexCandidate, 0, len(candidateTaskInfos)),
+			}
+
+			// Get the chosen task cost
+			chosenCost, _, _ := getTaskPlanCost(t)
+
+			// Build candidate list
+			for _, candInfo := range candidateTaskInfos {
+				indexName := "table_scan"
+				if candInfo.path.Index != nil {
+					indexName = candInfo.path.Index.Name.O
+				} else if candInfo.path.IsTablePath() {
+					indexName = "table_scan"
+				} else if candInfo.path.PartialIndexPaths != nil {
+					indexName = "index_merge"
+				}
+
+				estRows := int64(candInfo.path.CountAfterAccess)
+				selectivity := 0.0
+				if ds.TableStats != nil && ds.TableStats.RowCount > 0 {
+					selectivity = float64(estRows) / ds.TableStats.RowCount
+				}
+
+				isChosen := math.Abs(candInfo.cost-chosenCost) < 1e-6
+
+				candidate := util.IndexCandidate{
+					IndexName:     indexName,
+					Cost:          candInfo.cost,
+					EstimatedRows: estRows,
+					Selectivity:   selectivity,
+					Chosen:        isChosen,
+				}
+
+				if !isChosen {
+					candidate.RejectedReason = "higher_cost"
+				}
+
+				selectionInfo.Candidates = append(selectionInfo.Candidates, candidate)
+				if isChosen {
+					selectionInfo.Chosen = &selectionInfo.Candidates[len(selectionInfo.Candidates)-1]
+				}
+			}
+
+			selectionInfo.Reason = "lowest_cost"
+
+			// Capture statistics info
+			if ds.StatisticTable != nil {
+				healthy := 0
+				if ds.StatisticTable.Pseudo {
+					healthy = 0
+				} else {
+					healthy = int(ds.StatisticTable.GetStatsHealthy())
+				}
+
+				selectionInfo.StatsInfo = &util.StatisticsInfo{
+					Version:  ds.StatisticTable.Version,
+					Healthy:  healthy,
+				}
+
+				if ds.TblColHists != nil && len(ds.TblColHists.PhysicalID2IndexHists) > 0 {
+					// Get histogram info from any available column
+					for _, hist := range ds.TblColHists.PhysicalID2IndexHists {
+						for _, h := range hist {
+							if h != nil && h.Histogram.Len() > 0 {
+								selectionInfo.StatsInfo.HistogramBuckets = h.Histogram.Len()
+								selectionInfo.StatsInfo.LastUpdated = h.LastUpdateVersion.UpdateTime()
+								break
+							}
+						}
+						break
+					}
+				}
+			}
+
+			ds.IndexSelectionInfo = selectionInfo
 		}
 	}()
 
@@ -1778,6 +1867,14 @@ func findBestTask4LogicalDataSource(super base.LogicalPlan, prop *property.Physi
 			idxMergeTask, err := convertToIndexMergeScan(ds, prop, candidate)
 			if err != nil {
 				return nil, err
+			}
+			// Track candidate task info
+			if cost, invalid, _ := getTaskPlanCost(idxMergeTask); !invalid {
+				candidateTaskInfos = append(candidateTaskInfos, candidateTaskInfo{
+					path: path,
+					task: idxMergeTask,
+					cost: cost,
+				})
 			}
 			curIsBetter, err := compareTaskCost(idxMergeTask, t)
 			if err != nil {
@@ -1905,6 +2002,14 @@ func findBestTask4LogicalDataSource(super base.LogicalPlan, prop *property.Physi
 			if err != nil {
 				return nil, err
 			}
+			// Track candidate task info
+			if cost, invalid, _ := getTaskPlanCost(tblTask); !invalid {
+				candidateTaskInfos = append(candidateTaskInfos, candidateTaskInfo{
+					path: path,
+					task: tblTask,
+					cost: cost,
+				})
+			}
 			curIsBetter, err := compareTaskCost(tblTask, t)
 			if err != nil {
 				return nil, err
@@ -1925,6 +2030,14 @@ func findBestTask4LogicalDataSource(super base.LogicalPlan, prop *property.Physi
 		idxTask, err := convertToIndexScan(ds, prop, candidate)
 		if err != nil {
 			return nil, err
+		}
+		// Track candidate task info
+		if cost, invalid, _ := getTaskPlanCost(idxTask); !invalid {
+			candidateTaskInfos = append(candidateTaskInfos, candidateTaskInfo{
+				path: path,
+				task: idxTask,
+				cost: cost,
+			})
 		}
 		curIsBetter, err := compareTaskCost(idxTask, t)
 		if err != nil {

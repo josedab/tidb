@@ -41,6 +41,8 @@ var (
 	ExplainFormatPlanCache = "plan_cache"
 	// ExplainFormatPlanTree displays the plan in a tree structure format
 	ExplainFormatPlanTree = "plan_tree"
+	// ExplainFormatDetailed displays detailed index selection information
+	ExplainFormatDetailed = "detailed"
 
 	// ExplainFormats stores the valid formats for explain statement, used by validator.
 	ExplainFormats = []string{
@@ -57,5 +59,6 @@ var (
 		ExplainFormatCostTrace,
 		ExplainFormatPlanCache,
 		ExplainFormatPlanTree,
+		ExplainFormatDetailed,
 	}
 )

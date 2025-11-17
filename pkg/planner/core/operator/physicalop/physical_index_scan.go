@@ -108,6 +108,9 @@ type PhysicalIndexScan struct {
 
 	GroupedRanges  [][]*ranger.Range `plan-cache-clone:"shallow"`
 	GroupByColIdxs []int             `plan-cache-clone:"shallow"`
+
+	// IndexSelectionInfo captures the index selection decision for EXPLAIN FORMAT='detailed'
+	IndexSelectionInfo *util.IndexSelectionInfo `plan-cache-clone:"must-nil"`
 }
 
 // FullRange represent used all partitions.
@@ -639,22 +642,23 @@ func GetPhysicalIndexScan4LogicalIndexScan(s *logicalop.LogicalIndexScan, _ *exp
 func GetOriginalPhysicalIndexScan(ds *logicalop.DataSource, prop *property.PhysicalProperty, path *util.AccessPath, isMatchProp bool, isSingleScan bool) *PhysicalIndexScan {
 	idx := path.Index
 	is := PhysicalIndexScan{
-		Table:            ds.TableInfo,
-		TableAsName:      ds.TableAsName,
-		DBName:           ds.DBName,
-		Columns:          sliceutil.DeepClone(ds.Columns),
-		Index:            idx,
-		IdxCols:          path.IdxCols,
-		IdxColLens:       path.IdxColLens,
-		AccessCondition:  path.AccessConds,
-		Ranges:           path.Ranges,
-		DataSourceSchema: ds.Schema(),
-		IsPartition:      ds.PartitionDefIdx != nil,
-		PhysicalTableID:  ds.PhysicalTableID,
-		TblColHists:      ds.TblColHists,
-		PkIsHandleCol:    ds.GetPKIsHandleCol(),
-		ConstColsByCond:  path.ConstCols,
-		Prop:             prop,
+		Table:              ds.TableInfo,
+		TableAsName:        ds.TableAsName,
+		DBName:             ds.DBName,
+		Columns:            sliceutil.DeepClone(ds.Columns),
+		Index:              idx,
+		IdxCols:            path.IdxCols,
+		IdxColLens:         path.IdxColLens,
+		AccessCondition:    path.AccessConds,
+		Ranges:             path.Ranges,
+		DataSourceSchema:   ds.Schema(),
+		IsPartition:        ds.PartitionDefIdx != nil,
+		PhysicalTableID:    ds.PhysicalTableID,
+		TblColHists:        ds.TblColHists,
+		PkIsHandleCol:      ds.GetPKIsHandleCol(),
+		ConstColsByCond:    path.ConstCols,
+		Prop:               prop,
+		IndexSelectionInfo: ds.IndexSelectionInfo,
 	}.Init(ds.SCtx(), ds.QueryBlockOffset())
 	rowCount := path.CountAfterAccess
 	is.InitSchema(append(path.FullIdxCols, ds.CommonHandleCols...), !isSingleScan)

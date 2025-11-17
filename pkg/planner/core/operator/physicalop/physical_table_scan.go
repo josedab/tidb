@@ -151,6 +151,9 @@ type PhysicalTableScan struct {
 
 	GroupedRanges  [][]*ranger.Range `plan-cache-clone:"shallow"`
 	GroupByColIdxs []int             `plan-cache-clone:"shallow"`
+
+	// IndexSelectionInfo captures the index selection decision for EXPLAIN FORMAT='detailed'
+	IndexSelectionInfo *util.IndexSelectionInfo `plan-cache-clone:"must-nil"`
 }
 
 const emptyPhysicalTableScanSize = int64(unsafe.Sizeof(PhysicalTableScan{}))
@@ -178,21 +181,22 @@ func GetPhysicalScan4LogicalTableScan(s *logicalop.LogicalTableScan, schema *exp
 // GetOriginalPhysicalTableScan is to get PhysicalTableScan
 func GetOriginalPhysicalTableScan(ds *logicalop.DataSource, prop *property.PhysicalProperty, path *util.AccessPath, isMatchProp bool) (*PhysicalTableScan, float64) {
 	ts := PhysicalTableScan{
-		Table:           ds.TableInfo,
-		Columns:         slices.Clone(ds.Columns),
-		TableAsName:     ds.TableAsName,
-		DBName:          ds.DBName,
-		isPartition:     ds.PartitionDefIdx != nil,
-		PhysicalTableID: ds.PhysicalTableID,
-		Ranges:          path.Ranges,
-		AccessCondition: path.AccessConds,
-		StoreType:       path.StoreType,
-		HandleCols:      ds.HandleCols,
-		TblCols:         ds.TblCols,
-		TblColHists:     ds.TblColHists,
-		constColsByCond: path.ConstCols,
-		Prop:            prop,
-		FilterCondition: slices.Clone(path.TableFilters),
+		Table:              ds.TableInfo,
+		Columns:            slices.Clone(ds.Columns),
+		TableAsName:        ds.TableAsName,
+		DBName:             ds.DBName,
+		isPartition:        ds.PartitionDefIdx != nil,
+		PhysicalTableID:    ds.PhysicalTableID,
+		Ranges:             path.Ranges,
+		AccessCondition:    path.AccessConds,
+		StoreType:          path.StoreType,
+		HandleCols:         ds.HandleCols,
+		TblCols:            ds.TblCols,
+		TblColHists:        ds.TblColHists,
+		constColsByCond:    path.ConstCols,
+		Prop:               prop,
+		FilterCondition:    slices.Clone(path.TableFilters),
+		IndexSelectionInfo: ds.IndexSelectionInfo,
 	}.Init(ds.SCtx(), ds.QueryBlockOffset())
 	ts.SetSchema(ds.Schema().Clone())
 	rowCount := path.CountAfterAccess
