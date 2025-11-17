@@ -36,6 +36,11 @@ var (
 	sessionPlanCacheLookupDuration          prometheus.Observer
 	instancePlanCacheLookupDuration         prometheus.Observer
 	instancePlanCacheCloneDuration          prometheus.Observer
+	sharedPlanCacheHitCounter               prometheus.Counter
+	sharedPlanCacheMissCounter              prometheus.Counter
+	sharedPlanCacheEvictionCounter          prometheus.Counter
+	sharedPlanCacheInstancePlanNumCounter   prometheus.Gauge
+	sharedPlanCacheInstanceMemoryUsage      prometheus.Gauge
 )
 
 func init() {
@@ -60,6 +65,12 @@ func InitMetricsVars() {
 	sessionPlanCacheLookupDuration = metrics.PlanCacheProcessDuration.WithLabelValues(" session-plan-cache-lookup")
 	instancePlanCacheLookupDuration = metrics.PlanCacheProcessDuration.WithLabelValues(" instance-plan-cache-lookup")
 	instancePlanCacheCloneDuration = metrics.PlanCacheProcessDuration.WithLabelValues(" instance-plan-cache-clone")
+	// shared plan cache metrics
+	sharedPlanCacheHitCounter = metrics.PlanCacheCounter.WithLabelValues("shared")
+	sharedPlanCacheMissCounter = metrics.PlanCacheMissCounter.WithLabelValues("shared")
+	sharedPlanCacheEvictionCounter = metrics.PlanCacheMissCounter.WithLabelValues("shared-eviction")
+	sharedPlanCacheInstancePlanNumCounter = metrics.PlanCacheInstancePlanNumCounter.WithLabelValues(" shared-plan-cache")
+	sharedPlanCacheInstanceMemoryUsage = metrics.PlanCacheInstanceMemoryUsage.WithLabelValues(" shared-plan-cache")
 }
 
 // GetPlanCacheHitCounter get different plan cache hit counter
@@ -115,4 +126,29 @@ func GetPlanCacheLookupDuration(instancePlanCache bool) prometheus.Observer {
 // GetPlanCacheInstanceEvict get instance plan cache evict counter.
 func GetPlanCacheInstanceEvict() prometheus.Gauge {
 	return instancePlanCacheInstanceNumEvict
+}
+
+// GetSharedPlanCacheHitCounter get shared plan cache hit counter.
+func GetSharedPlanCacheHitCounter() prometheus.Counter {
+	return sharedPlanCacheHitCounter
+}
+
+// GetSharedPlanCacheMissCounter get shared plan cache miss counter.
+func GetSharedPlanCacheMissCounter() prometheus.Counter {
+	return sharedPlanCacheMissCounter
+}
+
+// GetSharedPlanCacheEvictionCounter get shared plan cache eviction counter.
+func GetSharedPlanCacheEvictionCounter() prometheus.Counter {
+	return sharedPlanCacheEvictionCounter
+}
+
+// GetSharedPlanCacheInstanceNumCounter get shared plan cache instance plan num counter.
+func GetSharedPlanCacheInstanceNumCounter() prometheus.Gauge {
+	return sharedPlanCacheInstancePlanNumCounter
+}
+
+// GetSharedPlanCacheInstanceMemoryUsage get shared plan cache instance memory usage.
+func GetSharedPlanCacheInstanceMemoryUsage() prometheus.Gauge {
+	return sharedPlanCacheInstanceMemoryUsage
 }
