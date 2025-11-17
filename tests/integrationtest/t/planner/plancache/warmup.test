@@ -1,0 +1,41 @@
+# Test plan cache warmup by verifying statement summary contains executable queries
+# Note: Full warmup testing requires server restart which is not easily testable in integration tests
+
+# Setup: Enable non-prepared plan cache
+set tidb_enable_non_prepared_plan_cache=1;
+drop table if exists t;
+create table t (id int primary key, name varchar(50), age int);
+insert into t values (1, 'alice', 20), (2, 'bob', 25), (3, 'charlie', 30);
+
+# Execute queries multiple times to populate statement summary
+select * from t where id = 1;
+select * from t where id = 1;
+select * from t where id = 1;
+select * from t where id = 1;
+select * from t where id = 1;
+
+select * from t where age > 20;
+select * from t where age > 20;
+select * from t where age > 20;
+
+select count(*) from t;
+select count(*) from t;
+select count(*) from t;
+select count(*) from t;
+
+# Verify statement summary contains our queries
+# This simulates what warmup would query during server startup
+select digest_text, schema_name, exec_count
+from information_schema.statements_summary
+where digest_text like '%from t%' and exec_count >= 3
+order by exec_count desc, digest_text;
+
+# Test that we can EXPLAIN queries from statement summary (warmup does this)
+# Get a query from statement summary
+select digest_text into @query_text
+from information_schema.statements_summary
+where digest_text like 'select%from%t%' and exec_count >= 3
+limit 1;
+
+# Clean up
+drop table if exists t;

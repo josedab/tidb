@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "plancache",
@@ -17,5 +17,27 @@ go_library(
         "//pkg/util/logutil",
         "@com_github_pingcap_errors//:errors",
         "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "plancache_test",
+    timeout = "short",
+    srcs = ["warmup_test.go"],
+    embed = [":plancache"],
+    flaky = False,
+    deps = [
+        "//pkg/config",
+        "//pkg/parser/ast",
+        "//pkg/parser/mysql",
+        "//pkg/planner/core/resolve",
+        "//pkg/sessionctx",
+        "//pkg/types",
+        "//pkg/util",
+        "//pkg/util/chunk",
+        "//pkg/util/sqlexec",
+        "@com_github_ngaut_pools//:pools",
+        "@com_github_pingcap_errors//:errors",
+        "@com_github_stretchr_testify//require",
     ],
 )
