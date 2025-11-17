@@ -552,6 +552,30 @@ var defaultSysVars = []*SysVar{
 	}, GetGlobal: func(_ context.Context, s *SessionVars) (string, error) {
 		return BoolToOnOff(config.GetGlobalConfig().Instance.EnableSlowLog.Load()), nil
 	}},
+	{Scope: vardef.ScopeInstance, Name: vardef.TiDBSlowLogSamplingEnabled, Value: BoolToOnOff(vardef.DefTiDBSlowLogSamplingEnabled), Type: vardef.TypeBool, SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
+		config.GetGlobalConfig().Instance.SlowLogSamplingEnabled.Store(TiDBOptOn(val))
+		return nil
+	}, GetGlobal: func(_ context.Context, s *SessionVars) (string, error) {
+		return BoolToOnOff(config.GetGlobalConfig().Instance.SlowLogSamplingEnabled.Load()), nil
+	}},
+	{Scope: vardef.ScopeInstance, Name: vardef.TiDBSlowLogSamplingRate, Value: strconv.Itoa(vardef.DefTiDBSlowLogSamplingRate), Type: vardef.TypeInt, MinValue: 1, MaxValue: math.MaxInt64, SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
+		atomic.StoreUint64(&config.GetGlobalConfig().Instance.SlowLogSamplingRate, uint64(TidbOptInt64(val, vardef.DefTiDBSlowLogSamplingRate)))
+		return nil
+	}, GetGlobal: func(_ context.Context, s *SessionVars) (string, error) {
+		return strconv.FormatUint(atomic.LoadUint64(&config.GetGlobalConfig().Instance.SlowLogSamplingRate), 10), nil
+	}},
+	{Scope: vardef.ScopeInstance, Name: vardef.TiDBSlowLogAggregationWindow, Value: strconv.Itoa(vardef.DefTiDBSlowLogAggregationWindow), Type: vardef.TypeInt, MinValue: 1, MaxValue: 3600, SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
+		atomic.StoreUint64(&config.GetGlobalConfig().Instance.SlowLogAggregationWindow, uint64(TidbOptInt64(val, vardef.DefTiDBSlowLogAggregationWindow)))
+		return nil
+	}, GetGlobal: func(_ context.Context, s *SessionVars) (string, error) {
+		return strconv.FormatUint(atomic.LoadUint64(&config.GetGlobalConfig().Instance.SlowLogAggregationWindow), 10), nil
+	}},
+	{Scope: vardef.ScopeInstance, Name: vardef.TiDBSlowLogOutlierFactor, Value: strconv.Itoa(vardef.DefTiDBSlowLogOutlierFactor), Type: vardef.TypeInt, MinValue: 1, MaxValue: 1000, SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
+		atomic.StoreUint64(&config.GetGlobalConfig().Instance.SlowLogOutlierFactor, uint64(TidbOptInt64(val, vardef.DefTiDBSlowLogOutlierFactor)))
+		return nil
+	}, GetGlobal: func(_ context.Context, s *SessionVars) (string, error) {
+		return strconv.FormatUint(atomic.LoadUint64(&config.GetGlobalConfig().Instance.SlowLogOutlierFactor), 10), nil
+	}},
 	{Scope: vardef.ScopeInstance, Name: vardef.TiDBCheckMb4ValueInUTF8, Value: BoolToOnOff(config.GetGlobalConfig().Instance.CheckMb4ValueInUTF8.Load()), Type: vardef.TypeBool, SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
 		config.GetGlobalConfig().Instance.CheckMb4ValueInUTF8.Store(TiDBOptOn(val))
 		return nil

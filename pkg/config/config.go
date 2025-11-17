@@ -564,10 +564,14 @@ type Instance struct {
 	// These variables exist in both 'instance' section and another place.
 	// The configuration in 'instance' section takes precedence.
 
-	EnableSlowLog         AtomicBool `toml:"tidb_enable_slow_log" json:"tidb_enable_slow_log"`
-	SlowThreshold         uint64     `toml:"tidb_slow_log_threshold" json:"tidb_slow_log_threshold"`
-	RecordPlanInSlowLog   uint32     `toml:"tidb_record_plan_in_slow_log" json:"tidb_record_plan_in_slow_log"`
-	CheckMb4ValueInUTF8   AtomicBool `toml:"tidb_check_mb4_value_in_utf8" json:"tidb_check_mb4_value_in_utf8"`
+	EnableSlowLog              AtomicBool `toml:"tidb_enable_slow_log" json:"tidb_enable_slow_log"`
+	SlowThreshold              uint64     `toml:"tidb_slow_log_threshold" json:"tidb_slow_log_threshold"`
+	RecordPlanInSlowLog        uint32     `toml:"tidb_record_plan_in_slow_log" json:"tidb_record_plan_in_slow_log"`
+	SlowLogSamplingEnabled     AtomicBool `toml:"tidb_slow_log_sampling_enabled" json:"tidb_slow_log_sampling_enabled"`
+	SlowLogSamplingRate        uint64     `toml:"tidb_slow_log_sampling_rate" json:"tidb_slow_log_sampling_rate"`
+	SlowLogAggregationWindow   uint64     `toml:"tidb_slow_log_aggregation_window" json:"tidb_slow_log_aggregation_window"`
+	SlowLogOutlierFactor       uint64     `toml:"tidb_slow_log_outlier_factor" json:"tidb_slow_log_outlier_factor"`
+	CheckMb4ValueInUTF8        AtomicBool `toml:"tidb_check_mb4_value_in_utf8" json:"tidb_check_mb4_value_in_utf8"`
 	ForcePriority         string     `toml:"tidb_force_priority" json:"tidb_force_priority"`
 	MemoryUsageAlarmRatio float64    `toml:"tidb_memory_usage_alarm_ratio" json:"tidb_memory_usage_alarm_ratio"`
 	// EnableCollectExecutionInfo enables the TiDB to collect execution info.
@@ -1015,6 +1019,10 @@ var defaultConf = Config{
 		EnableSlowLog:               *NewAtomicBool(logutil.DefaultTiDBEnableSlowLog),
 		SlowThreshold:               logutil.DefaultSlowThreshold,
 		RecordPlanInSlowLog:         logutil.DefaultRecordPlanInSlowLog,
+		SlowLogSamplingEnabled:      *NewAtomicBool(true),
+		SlowLogSamplingRate:         100,
+		SlowLogAggregationWindow:    60,
+		SlowLogOutlierFactor:        10,
 		CheckMb4ValueInUTF8:         *NewAtomicBool(true),
 		ForcePriority:               "NO_PRIORITY",
 		MemoryUsageAlarmRatio:       DefMemoryUsageAlarmRatio,

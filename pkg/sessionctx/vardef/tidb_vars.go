@@ -248,6 +248,18 @@ const (
 	// TiDBEnableSlowLog enables TiDB to log slow queries.
 	TiDBEnableSlowLog = "tidb_enable_slow_log"
 
+	// TiDBSlowLogSamplingEnabled enables slow query log sampling and aggregation.
+	TiDBSlowLogSamplingEnabled = "tidb_slow_log_sampling_enabled"
+
+	// TiDBSlowLogSamplingRate is the sampling rate for repeated query patterns (1 in N).
+	TiDBSlowLogSamplingRate = "tidb_slow_log_sampling_rate"
+
+	// TiDBSlowLogAggregationWindow is the time window for aggregating slow query patterns (in seconds).
+	TiDBSlowLogAggregationWindow = "tidb_slow_log_aggregation_window"
+
+	// TiDBSlowLogOutlierFactor is the multiplier for slow threshold to always log outliers.
+	TiDBSlowLogOutlierFactor = "tidb_slow_log_outlier_factor"
+
 	// TiDBCheckMb4ValueInUTF8 is used to control whether to enable the check wrong utf8 value.
 	TiDBCheckMb4ValueInUTF8 = "tidb_check_mb4_value_in_utf8"
 
@@ -1504,6 +1516,10 @@ const (
 	DefEnableVectorizedExpression           = true
 	DefTiDBOptJoinReorderThreshold          = 0
 	DefTiDBDDLSlowOprThreshold              = 300
+	DefTiDBSlowLogSamplingEnabled           = true
+	DefTiDBSlowLogSamplingRate              = 100 // Sample 1 in 100 (1%)
+	DefTiDBSlowLogAggregationWindow         = 60  // 60 seconds
+	DefTiDBSlowLogOutlierFactor             = 10  // Log outliers exceeding threshold by 10x
 	DefTiDBUseFastAnalyze                   = false
 	DefTiDBSkipIsolationLevelCheck          = false
 	DefTiDBExpensiveQueryTimeThreshold      = 60      // 60s

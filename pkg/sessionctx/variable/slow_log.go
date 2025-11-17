@@ -24,17 +24,21 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tidb/pkg/config"
 	"github.com/pingcap/tidb/pkg/parser/ast"
 	"github.com/pingcap/tidb/pkg/parser/terror"
 	"github.com/pingcap/tidb/pkg/sessionctx/slowlogrule"
 	"github.com/pingcap/tidb/pkg/sessionctx/stmtctx"
 	contextutil "github.com/pingcap/tidb/pkg/util/context"
 	"github.com/pingcap/tidb/pkg/util/execdetails"
+	"github.com/pingcap/tidb/pkg/util/logutil"
 	"github.com/pingcap/tidb/pkg/util/ppcpuusage"
+	"github.com/pingcap/tidb/pkg/util/slowlog"
 	"github.com/tikv/client-go/v2/util"
 )
 
@@ -207,7 +211,51 @@ const (
 	SlowLogExecRetryCount = "Exec_retry_count"
 	// SlowLogResourceGroup is the resource group name that the current session bind.
 	SlowLogResourceGroup = "Resource_group"
+
+	// SlowLogTypeAggregated indicates an aggregated slow log entry
+	SlowLogTypeAggregated = "AGGREGATED"
+	// SlowLogTypeSample indicates a sampled slow log entry
+	SlowLogTypeSample = "SAMPLE"
+	// SlowLogTypeStr is the field name for log type
+	SlowLogTypeStr = "Type"
+	// SlowLogPatternHashStr is the field name for pattern hash
+	SlowLogPatternHashStr = "Pattern_hash"
 )
+
+var (
+	// slowLogAggregator is the global aggregator for slow query patterns
+	slowLogAggregator     *slowlog.PatternAggregator
+	slowLogAggregatorOnce sync.Once
+	slowLogAggregatorMu   sync.RWMutex
+)
+
+// initSlowLogAggregator initializes the global slow log aggregator
+func initSlowLogAggregator() {
+	slowLogAggregatorOnce.Do(func() {
+		cfg := config.GetGlobalConfig()
+		window := time.Duration(atomic.LoadUint64(&cfg.Instance.SlowLogAggregationWindow)) * time.Second
+
+		// Create aggregator with flush function
+		slowLogAggregator = slowlog.NewPatternAggregator(window, func(stats *slowlog.PatternStats) {
+			// Write aggregated log entry
+			logutil.SlowQueryLogger.Info(stats.FormatAggregatedLog())
+		})
+
+		// Set enabled based on config
+		slowLogAggregator.SetEnabled(cfg.Instance.SlowLogSamplingEnabled.Load())
+	})
+}
+
+// getSlowLogAggregator returns the global slow log aggregator
+func getSlowLogAggregator() *slowlog.PatternAggregator {
+	slowLogAggregatorMu.RLock()
+	defer slowLogAggregatorMu.RUnlock()
+
+	if slowLogAggregator == nil {
+		initSlowLogAggregator()
+	}
+	return slowLogAggregator
+}
 
 // JSONSQLWarnForSlowLog helps to print the SQLWarn through the slow log in JSON format.
 type JSONSQLWarnForSlowLog struct {
@@ -345,7 +393,57 @@ func kvExecDetailFormat(buf *bytes.Buffer, kvExecDetail *util.ExecDetails) {
 // # Prev_stmt: begin;
 // select * from t_slim;
 func (s *SessionVars) SlowLogFormat(logItems *SlowQueryLogItems) string {
+	cfg := config.GetGlobalConfig()
+
+	// Check if sampling is enabled
+	samplingEnabled := cfg.Instance.SlowLogSamplingEnabled.Load()
+	if samplingEnabled {
+		// Get slow threshold for outlier detection
+		slowThreshold := time.Duration(atomic.LoadUint64(&cfg.Instance.SlowThreshold)) * time.Millisecond
+		outlierFactor := atomic.LoadUint64(&cfg.Instance.SlowLogOutlierFactor)
+
+		// Always log outliers (queries exceeding threshold by outlier factor)
+		if slowThreshold > 0 && logItems.TimeTotal > slowThreshold*time.Duration(outlierFactor) {
+			// Log as outlier - full log with marker
+			return s.formatFullSlowLog(logItems, true, "")
+		}
+
+		// Normalize query and calculate hash
+		normalized := slowlog.NormalizeQuery(logItems.SQL)
+		hash := slowlog.PatternHash(normalized)
+
+		// Get aggregator
+		aggregator := getSlowLogAggregator()
+
+		// Check if pattern seen before
+		if aggregator.SeenBefore(hash) {
+			// Sample: Log 1 in N
+			samplingRate := atomic.LoadUint64(&cfg.Instance.SlowLogSamplingRate)
+			if samplingRate > 0 && s.ConnectionID%samplingRate != 0 {
+				// Aggregate only, don't log
+				aggregator.Add(logItems.SQL, logItems.TimeTotal)
+				return "" // Skip logging
+			}
+		}
+
+		// First occurrence or sampled - log with sampling marker
+		aggregator.Add(logItems.SQL, logItems.TimeTotal)
+		return s.formatFullSlowLog(logItems, false, hash)
+	}
+
+	// Sampling disabled - use original logic
+	return s.formatFullSlowLog(logItems, false, "")
+}
+
+// formatFullSlowLog formats a complete slow log entry
+func (s *SessionVars) formatFullSlowLog(logItems *SlowQueryLogItems, isOutlier bool, patternHash string) string {
 	var buf bytes.Buffer
+
+	// Add type marker for sampled/outlier logs
+	if patternHash != "" {
+		writeSlowLogItem(&buf, SlowLogTypeStr, SlowLogTypeSample)
+		writeSlowLogItem(&buf, SlowLogPatternHashStr, patternHash)
+	}
 
 	writeSlowLogItem(&buf, SlowLogTxnStartTSStr, strconv.FormatUint(logItems.TxnTS, 10))
 	if logItems.KeyspaceName != "" {
