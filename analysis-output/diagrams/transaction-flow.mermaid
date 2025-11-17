@@ -1,0 +1,74 @@
+%% TiDB Distributed Transaction Flow (2PC)
+%% Analysis Commit: bd6aa865308ed409fd7010af83a84249bf398d8c
+
+sequenceDiagram
+    participant Client
+    participant TiDB
+    participant PD
+    participant TiKV1 as TiKV-1<br/>(Primary Key)
+    participant TiKV2 as TiKV-2<br/>(Secondary Key)
+
+    Note over Client,TiKV2: Optimistic Transaction Example
+
+    Client->>TiDB: BEGIN
+    TiDB->>PD: Get Timestamp
+    PD-->>TiDB: start_ts = 100
+    TiDB-->>Client: OK
+
+    Client->>TiDB: UPDATE users SET balance=500 WHERE id=1
+    Note over TiDB: Buffer write in memory
+    TiDB-->>Client: OK (not committed yet)
+
+    Client->>TiDB: INSERT INTO orders VALUES (...)
+    Note over TiDB: Buffer another write
+    TiDB-->>Client: OK
+
+    Client->>TiDB: COMMIT
+
+    rect rgb(255, 240, 220)
+        Note over TiDB,TiKV2: Phase 1: Prewrite
+
+        TiDB->>TiKV1: Prewrite(primary_key, start_ts=100)
+        TiKV1->>TiKV1: Check for conflicts
+        TiKV1->>TiKV1: Write lock + intent
+        TiKV1-->>TiDB: OK
+
+        TiDB->>TiKV2: Prewrite(secondary_key, primary=key1)
+        TiKV2->>TiKV2: Check for conflicts
+        TiKV2->>TiKV2: Write lock + intent
+        TiKV2-->>TiDB: OK
+    end
+
+    TiDB->>PD: Get Commit Timestamp
+    PD-->>TiDB: commit_ts = 105
+
+    rect rgb(220, 255, 220)
+        Note over TiDB,TiKV2: Phase 2: Commit
+
+        TiDB->>TiKV1: Commit(primary_key, commit_ts=105)
+        TiKV1->>TiKV1: Write commit record
+        TiKV1->>TiKV1: Remove lock
+        TiKV1-->>TiDB: OK
+
+        Note over TiDB: Commit point reached!<br/>Transaction durable
+    end
+
+    TiDB-->>Client: COMMIT SUCCESS
+
+    Note over TiDB,TiKV2: Async: Clean up secondary keys
+    TiDB->>TiKV2: Commit(secondary_key, commit_ts=105)
+    TiKV2->>TiKV2: Remove lock
+    TiKV2-->>TiDB: OK
+
+    Note over Client,TiKV2: Conflict Scenario
+
+    Client->>TiDB: BEGIN
+    TiDB->>PD: start_ts = 200
+    Client->>TiDB: UPDATE users SET balance=300 WHERE id=1
+    Client->>TiDB: COMMIT
+
+    TiDB->>TiKV1: Prewrite(key1, start_ts=200)
+    TiKV1->>TiKV1: Detect conflict!<br/>(another txn wrote at ts=150)
+    TiKV1-->>TiDB: WriteConflict Error
+    TiDB->>TiDB: Rollback transaction
+    TiDB-->>Client: Error: Write Conflict<br/>(Retry transaction)

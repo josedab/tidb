@@ -1,0 +1,63 @@
+%% TiDB Query Execution Data Flow
+%% Analysis Commit: bd6aa865308ed409fd7010af83a84249bf398d8c
+
+sequenceDiagram
+    participant Client
+    participant Server as TiDB Server<br/>(pkg/server)
+    participant Session as Session<br/>(pkg/session)
+    participant Parser as Parser<br/>(pkg/parser)
+    participant Planner as Planner<br/>(pkg/planner)
+    participant Executor as Executor<br/>(pkg/executor)
+    participant DistSQL as DistSQL<br/>(pkg/distsql)
+    participant TiKV
+    participant PD
+
+    Client->>+Server: SQL Query (MySQL Protocol)
+    Server->>+Session: Execute(sql)
+
+    Session->>+Parser: Parse(sql)
+    Parser-->>-Session: AST
+
+    Session->>+Planner: BuildLogicalPlan(AST)
+    Planner->>Planner: Column Pruning
+    Planner->>Planner: Predicate Push Down
+    Planner->>Planner: Join Reordering
+    Planner-->>-Session: Logical Plan
+
+    Session->>+Planner: OptimizePhysicalPlan(LogicalPlan)
+    Planner->>Planner: Cost-based Selection
+    Planner-->>-Session: Physical Plan
+
+    Session->>+Executor: BuildExecutor(PhysicalPlan)
+    Executor-->>-Session: Executor Tree
+
+    Session->>+Executor: Open(ctx)
+    Executor->>+PD: Get Timestamp (TSO)
+    PD-->>-Executor: start_ts = 12345
+    Executor-->>-Session: Ready
+
+    loop Fetch Results
+        Session->>+Executor: Next(ctx, chunk)
+
+        alt Distributed Query
+            Executor->>+DistSQL: Select(regions, filters)
+            DistSQL->>+TiKV: Coprocessor Request
+            TiKV->>TiKV: Filter + Aggregate
+            TiKV-->>-DistSQL: Partial Results
+            DistSQL->>DistSQL: Merge Results
+            DistSQL-->>-Executor: Chunk
+        else Point Get
+            Executor->>+TiKV: Get(key)
+            TiKV-->>-Executor: Value
+        end
+
+        Executor-->>-Session: Chunk (1024 rows)
+        Session-->>Server: Result Set
+    end
+
+    Session->>+Executor: Close()
+    Executor-->>-Session: Closed
+
+    Server-->>-Client: Results (MySQL Protocol)
+
+    Note over Session,Executor: Slow Query Logged if<br/>duration > threshold

@@ -1,0 +1,68 @@
+%% TiDB High-Level Architecture
+%% Analysis Commit: bd6aa865308ed409fd7010af83a84249bf398d8c
+
+graph TB
+    subgraph "Client Layer"
+        App[Application<br/>MySQL Driver]
+    end
+
+    subgraph "TiDB SQL Layer (Stateless)"
+        LB[Load Balancer]
+        SQL1[TiDB Server 1<br/>Parse, Plan, Execute]
+        SQL2[TiDB Server 2<br/>Parse, Plan, Execute]
+        SQL3[TiDB Server 3<br/>Parse, Plan, Execute]
+    end
+
+    subgraph "Coordination Layer"
+        PD[PD Cluster<br/>Timestamp Oracle<br/>Metadata & Scheduling]
+    end
+
+    subgraph "Storage Layer - Transactional (TiKV)"
+        direction LR
+        KV1[TiKV Node 1<br/>Regions 1-100]
+        KV2[TiKV Node 2<br/>Regions 101-200]
+        KV3[TiKV Node 3<br/>Regions 201-300]
+
+        KV1 -.Raft Replication.-> KV2
+        KV2 -.Raft Replication.-> KV3
+        KV3 -.Raft Replication.-> KV1
+    end
+
+    subgraph "Storage Layer - Analytical (TiFlash)"
+        direction LR
+        Flash1[TiFlash Node 1<br/>Columnar Storage]
+        Flash2[TiFlash Node 2<br/>Columnar Storage]
+
+        KV1 -.Raft Learner.-> Flash1
+        KV2 -.Raft Learner.-> Flash2
+    end
+
+    App -->|MySQL Protocol| LB
+    LB --> SQL1
+    LB --> SQL2
+    LB --> SQL3
+
+    SQL1 --> PD
+    SQL2 --> PD
+    SQL3 --> PD
+
+    SQL1 -->|OLTP Queries| KV1
+    SQL1 -->|OLTP Queries| KV2
+    SQL1 -->|OLTP Queries| KV3
+
+    SQL1 -->|OLAP Queries<br/>MPP| Flash1
+    SQL1 -->|OLAP Queries<br/>MPP| Flash2
+
+    PD -.Cluster Management.-> KV1
+    PD -.Cluster Management.-> KV2
+    PD -.Cluster Management.-> KV3
+
+    style SQL1 fill:#e1f5ff
+    style SQL2 fill:#e1f5ff
+    style SQL3 fill:#e1f5ff
+    style KV1 fill:#fff3e0
+    style KV2 fill:#fff3e0
+    style KV3 fill:#fff3e0
+    style Flash1 fill:#f3e5f5
+    style Flash2 fill:#f3e5f5
+    style PD fill:#e8f5e9
