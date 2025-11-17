@@ -797,6 +797,18 @@ type Performance struct {
 
 	// EnableAsyncBatchGet indicates whether to use async API when sending batch-get requests.
 	EnableAsyncBatchGet bool `toml:"enable-async-batch-get" json:"enable-async-batch-get"`
+
+	// Smart Statistics Configuration (RFC-0004)
+	// EnableSmartStatistics enables intelligent background statistics refresh
+	EnableSmartStatistics bool `toml:"enable-smart-statistics" json:"enable-smart-statistics"`
+	// StatsWorkloadAware enables workload-aware scheduling for statistics collection
+	StatsWorkloadAware bool `toml:"stats-workload-aware" json:"stats-workload-aware"`
+	// StatsIncrementalEnabled enables incremental statistics analysis
+	StatsIncrementalEnabled bool `toml:"stats-incremental-enabled" json:"stats-incremental-enabled"`
+	// StatsMaxCPUPercent sets maximum CPU percentage for stats collection (0-100)
+	StatsMaxCPUPercent float64 `toml:"stats-max-cpu-percent" json:"stats-max-cpu-percent"`
+	// StatsMaxIOBandwidthMB sets maximum IO bandwidth for stats collection in MB/s
+	StatsMaxIOBandwidthMB uint64 `toml:"stats-max-io-bandwidth-mb" json:"stats-max-io-bandwidth-mb"`
 }
 
 // PlanCache is the PlanCache section of the config.
@@ -1076,6 +1088,12 @@ var defaultConf = Config{
 		// Deprecated: Stats are always initialized concurrently.
 		ConcurrentlyInitStats: true,
 		EnableAsyncBatchGet:   true,
+		// Smart Statistics defaults (RFC-0004)
+		EnableSmartStatistics:   true,
+		StatsWorkloadAware:      true,
+		StatsIncrementalEnabled: true,
+		StatsMaxCPUPercent:      70.0, // Max 70% CPU for stats collection
+		StatsMaxIOBandwidthMB:   100,  // Max 100 MB/s IO bandwidth
 	},
 	ProxyProtocol: ProxyProtocol{
 		Networks:      "",
