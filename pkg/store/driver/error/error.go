@@ -23,6 +23,7 @@ import (
 	"github.com/pingcap/tidb/pkg/parser/terror"
 	"github.com/pingcap/tidb/pkg/util/dbterror"
 	"github.com/pingcap/tidb/pkg/util/dbterror/exeerrors"
+	"github.com/pingcap/tidb/pkg/util/deadlockhistory"
 	"github.com/pingcap/tidb/pkg/util/sqlkiller"
 	tikverr "github.com/tikv/client-go/v2/error"
 	pderr "github.com/tikv/pd/client/errs"
@@ -187,6 +188,12 @@ func ToTiDBErr(err error) error {
 		return ErrLockWaitTimeout
 	}
 
+	// Handle deadlock errors with enhanced diagnostics
+	var deadlockErr *tikverr.ErrDeadlock
+	if stderrs.As(err, &deadlockErr) {
+		return ConvertDeadlockError(deadlockErr)
+	}
+
 	if stderrs.Is(err, tikverr.ErrRegionUnavailable) {
 		return ErrRegionUnavailable
 	}
@@ -219,3 +226,27 @@ func ToTiDBErr(err error) error {
 
 	return errors.Trace(err)
 }
+
+// ConvertDeadlockError converts a TiKV deadlock error to a TiDB error with enhanced diagnostics.
+// It formats the deadlock information in a user-friendly way, showing the transaction cycle
+// and which transaction was chosen as the victim.
+func ConvertDeadlockError(deadlockErr *tikverr.ErrDeadlock) error {
+	// Convert to deadlock record
+	record := deadlockhistory.ErrDeadlockToDeadlockRecord(deadlockErr)
+
+	// Select the victim transaction (youngest transaction with highest start_ts)
+	victimTxnID := deadlockhistory.SelectDeadlockVictim(record.WaitChain)
+
+	// Create detailed error message
+	details := &deadlockhistory.DeadlockDetails{
+		Record:      record,
+		VictimTxnID: victimTxnID,
+	}
+
+	formattedMsg := deadlockhistory.FormatDeadlockError(details)
+
+	// Return the deadlock error with the formatted message
+	// We use GenWithStackByArgs to preserve the error code while adding our custom message
+	return exeerrors.ErrDeadlock.GenWithStackByArgs(formattedMsg)
+}
+
