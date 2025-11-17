@@ -95,6 +95,10 @@ type Tracker struct {
 	bytesConsumed       int64             // Consumed bytes.
 	IsRootTrackerOfSess bool              // IsRootTrackerOfSess indicates whether this tracker is bound for session
 	isGlobal            bool              // isGlobal indicates whether this tracker is global tracker
+
+	// Adaptive threshold support
+	adaptiveManager atomic.Pointer[AdaptiveThresholdManager]
+	useAdaptive     atomic.Bool
 }
 
 type actionMu struct {
@@ -487,10 +491,26 @@ func (t *Tracker) Consume(bs int64) {
 		bytesConsumed := atomic.AddInt64(&tracker.bytesConsumed, bs)
 		bytesReleased := atomic.LoadInt64(&tracker.bytesReleased)
 		limits := tracker.bytesLimit.Load()
-		if bytesConsumed+bytesReleased >= limits.bytesHardLimit && limits.bytesHardLimit > 0 {
+
+		// Use adaptive threshold if enabled
+		var effectiveHardLimit, effectiveSoftLimit int64
+		if tracker.useAdaptive.Load() {
+			if manager := tracker.adaptiveManager.Load(); manager != nil {
+				effectiveHardLimit = manager.CalculateAdaptiveThreshold(limits.bytesHardLimit)
+				effectiveSoftLimit = int64(float64(effectiveHardLimit) * softScale)
+			} else {
+				effectiveHardLimit = limits.bytesHardLimit
+				effectiveSoftLimit = limits.bytesSoftLimit
+			}
+		} else {
+			effectiveHardLimit = limits.bytesHardLimit
+			effectiveSoftLimit = limits.bytesSoftLimit
+		}
+
+		if bytesConsumed+bytesReleased >= effectiveHardLimit && effectiveHardLimit > 0 {
 			rootExceed = tracker
 		}
-		if bytesConsumed+bytesReleased >= limits.bytesSoftLimit && limits.bytesSoftLimit > 0 {
+		if bytesConsumed+bytesReleased >= effectiveSoftLimit && effectiveSoftLimit > 0 {
 			rootExceedForSoftLimit = tracker
 		}
 
@@ -1299,4 +1319,40 @@ func (h *trackerArbitrateHelper) Stop(reason ArbitratorStopReason) bool {
 
 func (h *trackerArbitrateHelper) HeapInuse() int64 {
 	return h.tracker.BytesConsumed()
+}
+
+// SetAdaptiveManager enables adaptive thresholds for this tracker
+func (t *Tracker) SetAdaptiveManager(manager *AdaptiveThresholdManager) {
+	if manager == nil {
+		return
+	}
+	t.adaptiveManager.Store(manager)
+	t.useAdaptive.Store(true)
+}
+
+// GetAdaptiveBytesLimit returns adaptive threshold if enabled, otherwise returns base limit
+func (t *Tracker) GetAdaptiveBytesLimit() int64 {
+	// Check if adaptive is enabled
+	if !t.useAdaptive.Load() {
+		return t.GetBytesLimit()
+	}
+
+	manager := t.adaptiveManager.Load()
+	if manager == nil {
+		return t.GetBytesLimit()
+	}
+
+	// Get base threshold
+	baseLimit := t.bytesLimit.Load().bytesHardLimit
+
+	// Calculate adaptive threshold
+	return manager.CalculateAdaptiveThreshold(baseLimit)
+}
+
+// GetAdaptiveStats returns threshold information for debugging
+func (t *Tracker) GetAdaptiveStats() (baseLimit, effectiveLimit int64, isAdaptive bool) {
+	baseLimit = t.bytesLimit.Load().bytesHardLimit
+	effectiveLimit = t.GetAdaptiveBytesLimit()
+	isAdaptive = t.useAdaptive.Load() && t.adaptiveManager.Load() != nil
+	return
 }

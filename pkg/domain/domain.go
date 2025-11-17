@@ -232,6 +232,9 @@ type Domain struct {
 	// only used for nextgen
 	crossKSSessMgr           *crossks.Manager
 	crossKSSessFactoryGetter func(string, validatorapi.Validator) pools.Factory
+
+	// Adaptive memory management
+	adaptiveThresholdMgr atomic.Pointer[memory.AdaptiveThresholdManager]
 }
 
 var _ sqlsvrapi.Server = (*Domain)(nil)
@@ -323,6 +326,16 @@ func (do *Domain) GetGlobalConfigSyncer() *globalconfigsync.GlobalConfigSyncer {
 // Store gets KV store from domain.
 func (do *Domain) Store() kv.Storage {
 	return do.store
+}
+
+// SetAdaptiveThresholdManager sets the adaptive threshold manager.
+func (do *Domain) SetAdaptiveThresholdManager(mgr *memory.AdaptiveThresholdManager) {
+	do.adaptiveThresholdMgr.Store(mgr)
+}
+
+// GetAdaptiveThresholdManager returns the adaptive threshold manager.
+func (do *Domain) GetAdaptiveThresholdManager() *memory.AdaptiveThresholdManager {
+	return do.adaptiveThresholdMgr.Load()
 }
 
 // GetScope gets the status variables scope.

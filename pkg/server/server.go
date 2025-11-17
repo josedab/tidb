@@ -60,6 +60,7 @@ import (
 	"github.com/pingcap/tidb/pkg/metrics"
 	"github.com/pingcap/tidb/pkg/parser/ast"
 	"github.com/pingcap/tidb/pkg/parser/auth"
+	"github.com/pingcap/tidb/pkg/util/memory"
 	"github.com/pingcap/tidb/pkg/parser/mysql"
 	"github.com/pingcap/tidb/pkg/parser/terror"
 	"github.com/pingcap/tidb/pkg/planner/core"
@@ -154,6 +155,12 @@ type Server struct {
 	authTokenCancelFunc context.CancelFunc
 	wg                  sync.WaitGroup
 	printMDLLogTime     time.Time
+
+	// Adaptive memory management
+	pressureMonitor      *memory.PressureMonitor
+	adaptiveThresholdMgr *memory.AdaptiveThresholdManager
+	memoryMonitorCtx     context.Context
+	memoryMonitorCancel  context.CancelFunc
 
 	StandbyController
 }
@@ -345,6 +352,18 @@ func NewServer(cfg *config.Config, driver IDriver) (*Server, error) {
 		s.capability |= mysql.ClientSSL
 	}
 	variable.RegisterStatistics(s)
+
+	// Initialize adaptive memory spill components if enabled
+	if cfg.Performance.AdaptiveMemorySpill {
+		s.memoryMonitorCtx, s.memoryMonitorCancel = context.WithCancel(context.Background())
+		s.pressureMonitor = memory.NewPressureMonitor(logutil.BgLogger().Named("memory-pressure"))
+		s.adaptiveThresholdMgr = memory.NewAdaptiveThresholdManager(s.pressureMonitor)
+		s.adaptiveThresholdMgr.Enable()
+		logutil.BgLogger().Info("adaptive memory spill enabled",
+			zap.Bool("enabled", true),
+			zap.Uint("poll_interval", cfg.Performance.MemoryPressureInterval))
+	}
+
 	return s, nil
 }
 
@@ -480,6 +499,19 @@ func (s *Server) Run(dom *domain.Domain) error {
 		}
 		mppcoordmanager.InstanceMPPCoordinatorManager.InitServerAddr(s.GetStatusServerAddr())
 	}
+
+	// Start memory pressure monitoring if enabled and set in domain
+	if s.pressureMonitor != nil {
+		s.pressureMonitor.Start(s.memoryMonitorCtx)
+		logutil.BgLogger().Info("memory pressure monitor started")
+
+		// Make adaptive threshold manager available through domain
+		if dom != nil && s.adaptiveThresholdMgr != nil {
+			dom.SetAdaptiveThresholdManager(s.adaptiveThresholdMgr)
+			logutil.BgLogger().Info("adaptive threshold manager registered with domain")
+		}
+	}
+
 	if config.GetGlobalConfig().Performance.ForceInitStats && dom != nil {
 		<-dom.StatsHandle().InitStatsDone
 	}
@@ -669,6 +701,13 @@ func (s *Server) Close() {
 	s.rwlock.Lock() // // prevent new connections
 	defer s.rwlock.Unlock()
 	s.inShutdownMode.Store(true)
+
+	// Stop memory pressure monitoring if enabled
+	if s.memoryMonitorCancel != nil {
+		s.memoryMonitorCancel()
+		logutil.BgLogger().Info("memory pressure monitor stopped")
+	}
+
 	s.closeListener()
 }
 
@@ -785,6 +824,12 @@ func (s *Server) onConn(conn *clientConn) {
 	})
 	if err != nil {
 		return
+	}
+
+	// Register session for adaptive memory tracking
+	if s.adaptiveThresholdMgr != nil {
+		s.adaptiveThresholdMgr.RegisterSession()
+		defer s.adaptiveThresholdMgr.UnregisterSession()
 	}
 
 	connectedTime := time.Now()

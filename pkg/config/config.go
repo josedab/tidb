@@ -797,6 +797,15 @@ type Performance struct {
 
 	// EnableAsyncBatchGet indicates whether to use async API when sending batch-get requests.
 	EnableAsyncBatchGet bool `toml:"enable-async-batch-get" json:"enable-async-batch-get"`
+
+	// AdaptiveMemorySpill enables adaptive memory spill thresholds.
+	// When enabled, TiDB adjusts memory spill thresholds based on system memory pressure
+	// and number of concurrent queries. This can improve performance and reduce OOM incidents.
+	AdaptiveMemorySpill bool `toml:"adaptive-memory-spill" json:"adaptive-memory-spill"`
+
+	// MemoryPressureInterval is the interval for monitoring memory pressure in seconds.
+	// Lower values provide faster response but slightly higher CPU overhead.
+	MemoryPressureInterval uint `toml:"memory-pressure-interval" json:"memory-pressure-interval"`
 }
 
 // PlanCache is the PlanCache section of the config.
@@ -1074,8 +1083,10 @@ var defaultConf = Config{
 		LiteInitStats:                     true,
 		ForceInitStats:                    true,
 		// Deprecated: Stats are always initialized concurrently.
-		ConcurrentlyInitStats: true,
-		EnableAsyncBatchGet:   true,
+		ConcurrentlyInitStats:  true,
+		EnableAsyncBatchGet:    true,
+		AdaptiveMemorySpill:    true, // Enable by default
+		MemoryPressureInterval: 1,    // Poll every 1 second
 	},
 	ProxyProtocol: ProxyProtocol{
 		Networks:      "",
